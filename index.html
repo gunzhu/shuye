@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <!-- iPhone全屏PWA适配 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="white">
+  <title>多病人输液进程计算器</title>
+  <link rel="manifest" href="./manifest.json">
+  <style>
+    *{box-sizing: border-box;margin:0;padding:0;font-family: system-ui;}
+    body{padding:16px;background:#f5f7fa;}
+    .box{background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 2px 8px #00000010;}
+    h3{margin-bottom:12px;color:#222;font-size:17px;}
+    input{width:100%;padding:12px 10px;margin:6px 0;border:1px solid #ddd;border-radius:8px;font-size:16px;}
+    button{width:100%;padding:14px;border:none;border-radius:8px;background:#007aff;color:#fff;font-size:16px;margin-top:8px;}
+    .btn-del{background:#ff3b30;}
+    .btn-clear{background:#666;margin-top:16px;}
+    .res{margin-top:10px;padding:10px;background:#f0f7ff;border-radius:8px;color:#0055bb;line-height:1.6;}
+    .patient-item{border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin:10px 0;}
+    .patient-name{font-weight:bold;font-size:16px;margin-bottom:6px;color:#007aff;}
+    .row{margin:4px 0;font-size:14px;color:#333;}
+  </style>
+</head>
+<body>
+  <!-- 模块1：基础双向计算器（原有功能保留） -->
+  <div class="box">
+    <h3>快速计算工具</h3>
+    <h4>① 总量算时长</h4>
+    <input id="mlTotal" placeholder="液体总量(ml)" type="number" step="0.1">
+    <input id="dripSpeed1" placeholder="滴速(滴/分)" type="number" step="0.1">
+    <button onclick="calcTime()">计算总输注时长</button>
+    <div class="res" id="resTime"></div>
+
+    <h4 style="margin-top:16px">② 时长算用量</h4>
+    <input id="dripSpeed2" placeholder="滴速(滴/分)" type="number" step="0.1">
+    <input id="timeMin" placeholder="输注时长(分钟)" type="number" step="0.1">
+    <button onclick="calcMl()">计算已输毫升</button>
+    <div class="res" id="resMl"></div>
+  </div>
+
+  <!-- 模块2：新增病人输液进程录入 -->
+  <div class="box">
+    <h3>录入新病人输液信息</h3>
+    <input id="pName" placeholder="病人姓名" type="text">
+    <input id="pTotalMl" placeholder="液体总容量(ml)" type="number" step="0.1">
+    <input id="pStart" type="datetime-local">
+    <input id="pDrip" placeholder="滴速(滴/分)" type="number" step="0.1">
+    <button onclick="addPatient()">保存病人进程</button>
+  </div>
+
+  <!-- 模块3：所有病人实时进程列表 -->
+  <div class="box">
+    <h3>全部病人实时输液进度</h3>
+    <div id="patientList"></div>
+    <button class="btn-clear" onclick="clearAllPatient()">清空所有记录</button>
+  </div>
+
+<script>
+const dripFactor = 15;
+// 读取本地存储病人数据
+let patientList = JSON.parse(localStorage.getItem('patientData')) || [];
+
+// ========== 原有基础计算函数 ==========
+function calcTime(){
+  let ml = Number(document.getElementById('mlTotal').value);
+  let drip = Number(document.getElementById('dripSpeed1').value);
+  if(!ml || !drip || ml <=0 || drip <=0){alert('请填写有效正数');return;}
+  let totalMin = (ml * dripFactor) / drip;
+  let h = Math.floor(totalMin / 60);
+  let m = (totalMin % 60).toFixed(1);
+  document.getElementById('resTime').innerText = `总输注时长：${h}小时${m}分钟`;
+}
+function calcMl(){
+  let drip = Number(document.getElementById('dripSpeed2').value);
+  let min = Number(document.getElementById('timeMin').value);
+  if(!drip || !min || drip <=0 || min <=0){alert('请填写有效正数');return;}
+  let ml = (drip * min) / dripFactor;
+  document.getElementById('resMl').innerText = `已输注液体：${ml.toFixed(2)} ml`;
+}
+
+// ========== 多病人管理核心函数 ==========
+// 添加病人
+function addPatient(){
+  const name = document.getElementById('pName').value.trim();
+  const totalMl = Number(document.getElementById('pTotalMl').value);
+  const startTime = document.getElementById('pStart').value;
+  const drip = Number(document.getElementById('pDrip').value);
+  if(!name || !totalMl || !startTime || !drip || totalMl <=0 || drip <=0){
+    alert('请完整填写所有有效信息！');
+    return;
+  }
+  const patient = {
+    id: Date.now(), // 唯一ID
+    name,
+    totalMl,
+    startTime,
+    drip
+  };
+  patientList.push(patient);
+  saveData();
+  renderList();
+  // 清空输入框
+  document.getElementById('pName').value = '';
+  document.getElementById('pTotalMl').value = '';
+  document.getElementById('pStart').value = '';
+  document.getElementById('pDrip').value = '';
+}
+
+// 保存到本地存储
+function saveData(){
+  localStorage.setItem('patientData', JSON.stringify(patientList));
+}
+
+// 删除单个病人
+function delPatient(id){
+  patientList = patientList.filter(item => item.id !== id);
+  saveData();
+  renderList();
+}
+
+// 清空全部
+function clearAllPatient(){
+  if(confirm('确认清空所有病人记录？数据无法恢复')){
+    patientList = [];
+    saveData();
+    renderList();
+  }
+}
+
+// 渲染病人列表，实时计算进度
+function renderList(){
+  const wrap = document.getElementById('patientList');
+  if(patientList.length === 0){
+    wrap.innerHTML = '<div class="row">暂无录入病人</div>';
+    return;
+  }
+  let html = '';
+  const now = new Date();
+  patientList.forEach(p => {
+    const start = new Date(p.startTime);
+    // 已过去总分钟数
+    const passMin = (now - start) / 1000 / 60;
+    // 已输毫升
+    const usedMl = (p.drip * passMin) / dripFactor;
+    const remainMl = p.totalMl - usedMl;
+    // 总需要分钟
+    const allMin = (p.totalMl * dripFactor) / p.drip;
+    // 预计结束时间
+    const endTime = new Date(start.getTime() + allMin * 60 * 1000);
+    // 格式化时间
+    const formatTime = (t) => {
+      const h = String(t.getHours()).padStart(2,'0');
+      const m = String(t.getMinutes()).padStart(2,'0');
+      return `${h}:${m}`;
+    };
+    const startStr = formatTime(start);
+    const endStr = formatTime(endTime);
+    // 状态判断
+    let status = '';
+    if(remainMl <= 0) status = '✅ 输液已完成';
+    else status = '⏳ 输注中';
+
+    html += `
+    <div class="patient-item">
+      <div class="patient-name">${p.name} ${status}</div>
+      <div class="row">总液体：${p.totalMl} ml | 滴速：${p.drip} 滴/分</div>
+      <div class="row">开始时间：${startStr}</div>
+      <div class="row">当前已输：${Math.max(0,usedMl).toFixed(2)} ml</div>
+      <div class="row">剩余液体：${Math.max(0,remainMl).toFixed(2)} ml</div>
+      <div class="row">预计结束：${endStr}</div>
+      <button class="btn-del" onclick="delPatient(${p.id})">删除该病人</button>
+    </div>
+    `;
+  });
+  wrap.innerHTML = html;
+}
+
+// 页面加载完成渲染列表
+window.onload = function(){
+  renderList();
+  // 每分钟自动刷新进度
+  setInterval(renderList, 60000);
+}
+</script>
+</body>
+</html>
